@@ -1,3 +1,24 @@
-controllers:
-    resource: ../src/Controller/
-    type: attribute
+orders_create:
+    path: /orders
+    methods: [POST]
+    controller: App\Controller\OrderController::createOrder
+
+orders_get:
+    path: /orders/{id}
+    methods: [GET]
+    controller: App\Controller\OrderController::getOrder
+
+orders_update:
+    path: /orders/{id}
+    methods: [PUT]
+    controller: App\Controller\OrderController::updateOrder
+
+orders_delete:
+    path: /orders/{id}
+    methods: [DELETE]
+    controller: App\Controller\OrderController::deleteOrder
+
+orders_confirm:
+    path: /orders/{id}/confirm
+    methods: [PUT]
+    controller: App\Controller\OrderController::confirmOrder

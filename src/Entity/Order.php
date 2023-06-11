@@ -6,6 +6,7 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * @ORM\Entity
+ * @ORM\Table(name="orders")
  */
 class Order
 {
@@ -21,45 +22,37 @@ class Order
      */
     private $status = false;
 
-    /**
-     * @ORM\OneToMany(targetEntity="OrderItem", mappedBy="order", cascade={"persist", "remove"})
-     */
-    private $orderItems;
-    
-    public function __construct()
-    {
-        $this->orderItems = new ArrayCollection();
-    }
 
     public function getId(): ?int
     {
         return $this->id;
     }
 
-    public function getStatus(): ?string
+    public function getStatus(): ?bool
     {
         return $this->status;
     }
 
-    public function setStatus(boolean $status): void
+    public function setStatus(bool $status): void
     {
         $this->status = $status;
     }
 
-    public function getOrderItems()
-    {
-        return $this->orderItems;
-    }
 
     public function addOrderItem(OrderItem $orderItem)
     {
-        $this->orderItems->add($orderItem);
         $orderItem->setOrder($this);
     }
 
     public function removeOrderItem(OrderItem $orderItem)
     {
-        $this->orderItems->removeElement($orderItem);
         $orderItem->setOrder(null);
+    }
+
+    public function setOrderItems(array $orderItems)
+    {
+        foreach ($orderItems as $orderItem) {
+            $this->addOrderItem($orderItem);
+        }
     }
 }

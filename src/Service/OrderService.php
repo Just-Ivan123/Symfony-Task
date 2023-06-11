@@ -3,10 +3,13 @@
 namespace App\Service;
 
 use App\Entity\Order;
+use App\Entity\Product;
+use App\Entity\OrderItem;
 use App\DTO\OrderDTO;
+use App\DTO\OrderItemDTO;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
-use App\Exception\ApiException;
+use App\Exception\APIException;
 use App\Repository\OrderRepository;
 
 class OrderService
@@ -24,84 +27,173 @@ class OrderService
 
     public function createOrder(array $requestData): OrderDTO
     {
-         // Создание DTO и заполнение данными из запроса
-         $orderDTO = new OrderDTO();
-         $orderDTO->setOrderItems($requestData['items']);
- 
-         // Валидация DTO с использованием штатных валидаций Symfony
-         $violations = $this->validator->validate($orderDTO);
- 
-         // Проверка наличия ошибок валидации
-         if (count($violations) > 0) {
-            throw new APIException('Validation failed', 400, $violations);
-         }
-         $order = new Order();
-         $order->setOrderItems($orderDTO->getOrderItems());
-         $this->entityManager->persist($order);
-         $this->entityManager->flush();
-         // Возвращение отвалидированной DTO
-         return $orderDTO;
+        $this->entityManager->getConnection()->beginTransaction();
+
+    try {
+        $order = new Order();
+        $this->entityManager->persist($order);
+
+        $orderItemObjects = [];
+        $productRepository = $this->entityManager->getRepository(Product::class);
+        $validator = $this->validator;
+
+        foreach ($requestData['items'] as $itemData) {
+            $product = $productRepository->find($itemData['product']['id']);
+            $violations = $validator->validate($product);
+            if (count($violations) > 0) {
+                throw new APIException('Validation failed for Product', 400, $violations);
+            }
+            $orderItem = new OrderItem($product, $order, $itemData['quantity']);
+            $this->entityManager->persist($orderItem);
+            $violations = $validator->validate($orderItem);
+            if (count($violations) > 0) {
+                throw new APIException('Validation failed for OrderItem', 400, $violations);
+            }
+            $orderItemDTO = new OrderItemDTO();
+            $orderItemDTO->setProduct($orderItem->getProduct());
+            $orderItemDTO->setQuantity($orderItem->getQuantity());
+            $orderItemObjects [] = $orderItemDTO;
+        }
+
+        $violations = $validator->validate($order);
+        if (count($violations) > 0) {
+            throw new APIException('Validation failed for Order', 400, $violations);
+        }
+
+        $this->entityManager->flush();
+        $this->entityManager->getConnection()->commit();
+
+        $orderDTO = new OrderDTO();
+        $orderDTO->setOrder($order);
+        $orderDTO->setOrderItems($orderItemObjects);
+
+        return $orderDTO;
+    } catch (\Exception $e) {
+        $this->entityManager->getConnection()->rollBack();
+        throw $e;
+    }
     }
 
-    public function getOrder(int $orderId): Order
+    public function getOrder(int $id): OrderDTO
     {
-        $order = $this->orderRepository->find($orderId);
+        $order = $this->orderRepository->find($id);
+        if (!$order) {
+            throw new APIException('Order not found', 404);
+        }
+        $orderItemObjects = [];
+        $orderItems = $this->entityManager->getRepository(OrderItem::class)->findBy(['order' => $order]);
+        $orderDTO = new OrderDTO();
+        $orderDTO->setOrder($order);
+        foreach($orderItems as $orderItem){
+            $orderItemDTO = new OrderItemDTO();
+            $orderItemDTO->setProduct($orderItem->getProduct());
+            $orderItemDTO->setQuantity($orderItem->getQuantity());
+            $orderItemObjects [] = $orderItemDTO;
+        }
+        $orderDTO->setOrderItems($orderItemObjects);
+        return $orderDTO;
+    }
 
+    public function updateOrder(int $orderId, array $requestData): OrderDTO
+    {
+    $this->entityManager->getConnection()->beginTransaction();
+
+    try {
+        $order = $this->orderRepository->find($orderId);
         if (!$order) {
             throw new APIException('Order not found', 404);
         }
 
-        return $order;
-    }
-
-    public function updateOrder(Order $order, array $requestData): OrderDTO
-    {
-        // Создание DTO и заполнение данными из запроса
-        $orderDTO = new OrderDTO();
-        $orderDTO->setStatus($requestData['status']);
-        $orderDTO->setOrderItems($requestData['items']);
-
-        // Валидация DTO с использованием штатных валидаций Symfony
-        $violations = $this->validator->validate($orderDTO);
-
-        // Проверка наличия ошибок валидации
-        if (count($violations) > 0) {
-            throw new APIException('Validation failed', 400, $violations);
+        
+        if (isset($requestData['status'])) {
+            $order->setStatus($requestData['status']);
         }
 
-        // Обновление сущности заказа
-        $order->setStatus($orderDTO->getStatus());
-        $order->setOrderItems($orderDTO->getOrderItems());
+        
+        if (isset($requestData['items'])) {
+            $orderItemObjects = [];
+            $productRepository = $this->entityManager->getRepository(Product::class);
+            $validator = $this->validator;
+
+            foreach ($requestData['items'] as $itemData) {
+                
+                if (isset($itemData['product']['id'])) {
+                    $product = $productRepository->find($itemData['product']['id']);
+                    $violations = $validator->validate($product);
+                    if (count($violations) > 0) {
+                        throw new APIException('Validation failed for Product', 400, $violations);
+                    }
+                } else {
+                    throw new APIException('Product ID is missing', 400);
+                }
+
+                $orderItem = new OrderItem($product, $order);
+
+                if (isset($itemData['quantity'])) {
+                    $orderItem->setQuantity($itemData['quantity']);
+                }
+
+                $this->entityManager->persist($orderItem);
+                $violations = $validator->validate($orderItem);
+                if (count($violations) > 0) {
+                    throw new APIException('Validation failed for OrderItem', 400, $violations);
+                }
+
+                $orderItemDTO = new OrderItemDTO();
+                $orderItemDTO->setProduct($orderItem->getProduct());
+                $orderItemDTO->setQuantity($orderItem->getQuantity());
+                $orderItemObjects[] = $orderItemDTO;
+            }
+
+        }
+
 
         $this->entityManager->flush();
+        $this->entityManager->getConnection()->commit();
 
-        // Возвращение отвалидированной DTO
+        $orderDTO = new OrderDTO();
+        $orderDTO->setOrder($order);
+        $orderDTO->setOrderItems($orderItemObjects);
+
         return $orderDTO;
+    } catch (\Exception $e) {
+        $this->entityManager->getConnection()->rollBack();
+        throw $e;
+    }
     }
 
     public function deleteOrder(int $orderId): void
     {
-        $order = $this->entityManager->getRepository(Order::class)->find($orderId);
-
+        $order = $this->orderRepository->find($orderId);
         if (!$order) {
             throw new APIException('Order not found', 404);
         }
-        $this->entityManager->remove($order);
-        $this->entityManager->flush();
+
+        $this->entityManager->getConnection()->beginTransaction();
+
+        try {
+            $orderItems = $this->entityManager->getRepository(OrderItem::class)->findBy(['order' => $order]);
+            foreach ($orderItems as $orderItem) {
+                $this->entityManager->remove($orderItem);
+            }
+            $this->entityManager->remove($order);
+
+            $this->entityManager->flush();
+            $this->entityManager->getConnection()->commit();
+        } catch (\Exception $e) {
+            $this->entityManager->getConnection()->rollBack();
+            throw $e;
+        }
     }
 
-    public function confirmOrder(int $orderId): Order
+    public function confirmOrder(int $orderId): void
     {
-        $order = $this->entityManager->getRepository(Order::class)->find($orderId);
-
-        if ($order) {
+        $order = $this->orderRepository->find($orderId);
+        if (!$order) {
+            throw new APIException('Order not found', 404);
+        }
+    
         $order->setStatus(true);
         $this->entityManager->flush();
-        }
-        $orderDTO = new OrderDTO();
-        $orderDTO->setOrderItems($order->getOrderItems());
-        $orderDTO->setStatus(true);
-        return $orderDTO;
     }
-
 }

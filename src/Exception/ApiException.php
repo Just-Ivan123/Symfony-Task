@@ -1,15 +1,20 @@
 <?php
 
-use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+namespace App\Exception;
 
-class ApiException extends \Exception implements HttpExceptionInterface
+use Exception;
+use Symfony\Component\Validator\ConstraintViolationListInterface;
+
+class APIException extends Exception
 {
-    protected $statusCode;
+    private $statusCode;
+    private $errors;
 
-    public function __construct($statusCode, $message = null, \Throwable $previous = null, array $headers = [], $code = 0)
+    public function __construct(string $message, int $statusCode = 400, ?ConstraintViolationListInterface $violations = null)
     {
+        parent::__construct($message);
         $this->statusCode = $statusCode;
-        parent::__construct($message, $code, $previous);
+        $this->errors = $this->formatViolations($violations);
     }
 
     public function getStatusCode(): int
@@ -17,8 +22,35 @@ class ApiException extends \Exception implements HttpExceptionInterface
         return $this->statusCode;
     }
 
-    public function getHeaders(): array
+    public function getErrors(): array
     {
-        return [];
+        return $this->errors;
+    }
+
+    public function toArray(): array
+    {
+        return [
+            'message' => $this->getMessage(),
+            'statusCode' => $this->getStatusCode(),
+            'errors' => $this->getErrors(),
+        ];
+    }
+
+
+    private function formatViolations(?ConstraintViolationListInterface $violations): array
+    {
+        if (!$violations) {
+            return [];
+        }
+
+        $formattedViolations = [];
+        foreach ($violations as $violation) {
+            $formattedViolations[] = [
+                'property' => $violation->getPropertyPath(),
+                'message' => $violation->getMessage(),
+            ];
+        }
+
+        return $formattedViolations;
     }
 }
